@@ -257,6 +257,81 @@ out:
     return Ret;
 }
 
+#define MAX_CONNECTOR_NAT_INDEX 3
+
+#pragma warning(disable : 4244)
+static VOID
+DemagicConnectorIPV4NAT(_Inout_ IPV4HDR* Hdr)
+{
+    /*
+     * DemagicConnectorIPV4NAT reverses the NAT magic which we apply to
+     * connector RFC 1918 networks. The basic flow here is:
+     *
+     * Case 0: Address is already RFC 1918 or public IP, return as-is.
+     *
+     * Case 1: If natIndex % 2 == 0 => First octet is 10.
+     *
+     * Case 2: If natIndex % 2 != 0 => First octet is either 172 or 192. Look
+     *         at the second octet.
+     *
+     *     2a: If second octet is in range [16, 31], then first octet is 172.
+     *     2b: Otherwise, first octet is 192.
+     *
+     * Case 3: The IP does not match any RFC 1918 address, return as-is.
+     *
+     * This function is called in the following WireGuard call hierarchy (some
+     * callees excluded for brevity), as context:
+     *
+     * ...                      (excluded)
+     * PacketDecryptWorker      (parent)
+     * ProcessPerPeerWork
+     * PacketPeerRxWork
+     * PacketConsumeDataDone
+     * DemagicConnectorIPV4NAT  (leaf)
+     *
+     * Upon modification of IPV4HDR in DemagicConnectorIPV4NAT,
+     * PacketPeerRxWork calls NdisMIndicateReceiveNetBufferLists which releases
+     * the underlying, now modified NET_BUFFER structures to higher level
+     * drivers.
+     */
+
+    UINT32_LE Daddr4 = Ntohl(Hdr->Daddr);
+    UINT8 NatIndex = (Daddr4 >> 24) & 0xFFFFFFFF;
+    UINT8 SecondOctet = (Daddr4 >> 16) & 0xFFFFFFFF;
+    UINT32 NatIndexBitMask = 0x00FFFFFF;
+
+    // Case 0
+    if (NatIndex > MAX_CONNECTOR_NAT_INDEX)
+    {
+        return;
+    }
+
+    // Case 1: Set first octet to 10.
+    if (NatIndex % 2 == 0)
+    {
+        Daddr4 = (Daddr4 & NatIndexBitMask) | (10 << 24);
+        Hdr->Daddr = Htonl(Daddr4);
+        return;
+    }
+
+    // Case 2: Set first octet to 172 (2a) or 192 (2b).
+    if (SecondOctet > 15 && SecondOctet < 32)
+    {
+        Daddr4 = (Daddr4 & NatIndexBitMask) | (172 << 24);
+        Hdr->Daddr = Htonl(Daddr4);
+        return;
+    }
+    else if (SecondOctet == 168)
+    {
+        Daddr4 = (Daddr4 & NatIndexBitMask) | (192 << 24);
+        Hdr->Daddr = Htonl(Daddr4);
+        return;
+    }
+
+    // Case 3
+    return;
+}
+
 #ifdef DBG
 #    include "selftest/counter.c"
 #endif
@@ -318,6 +393,7 @@ PacketConsumeDataDone(_Inout_ WG_PEER *Peer, _Inout_ NET_BUFFER_LIST *Nbl)
     if (Proto == Htons(NDIS_ETH_TYPE_IPV4) && (Hdr = NdisGetDataBuffer(Nb, sizeof(IPV4HDR), NULL, 1, 0)) != NULL)
     {
         Len = Ntohs(((IPV4HDR *)Hdr)->TotLen);
+        DemagicConnectorIPV4NAT((IPV4HDR *)Hdr);
         if (Len < sizeof(IPV4HDR))
             goto dishonestPacketSize;
         NdisSetNblFlag(Nbl, NDIS_NBL_FLAGS_IS_IPV4);
