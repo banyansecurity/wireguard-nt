@@ -123,6 +123,10 @@ PeerSerialDequeue(_Inout_ PEER_SERIAL *Serial)
 /* receive.c APIs: */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 VOID
+ComputeIPV4Checksum(_Inout_ IPV4HDR* Hdr);
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+VOID
 PacketReceive(_Inout_ WG_DEVICE *Wg, _In_ __drv_aliasesMem NET_BUFFER_LIST *First);
 
 MINIPORT_RETURN_NET_BUFFER_LISTS ReturnNetBufferLists;

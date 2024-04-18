@@ -257,6 +257,50 @@ out:
     return Ret;
 }
 
+#pragma warning(disable : 4244)
+_Use_decl_annotations_
+VOID
+ComputeIPV4Checksum(IPV4HDR* Hdr)
+{
+    // Must calculate checksum with empty / reset checksum.
+    Hdr->Check = 0;
+
+    IPV4HDR TempHdr = { 0 };
+
+    TempHdr.Ihl = 5;
+    TempHdr.Version = 4;
+    TempHdr.Tos = Hdr->Tos;
+    TempHdr.TotLen = Hdr->TotLen;
+    TempHdr.Id = Hdr->Id;
+    TempHdr.FragOff = Hdr->FragOff;
+    TempHdr.Ttl = Hdr->Ttl;
+    TempHdr.Protocol = Hdr->Protocol;
+    TempHdr.Saddr = Hdr->Saddr;
+    TempHdr.Daddr = Hdr->Daddr;
+
+    UINT16 *Addr = (UINT16 *) &TempHdr;
+    UINT32 Sum = 0;
+    UINT8 Count = sizeof(IPV4HDR);
+
+    while (Count > 1)
+    {
+        Sum += *Addr++;
+        Count -= 2;
+    }
+
+    if (Count > 0)
+    {
+        Sum += *Addr;
+    }
+
+    while (Sum >> 16)
+    {
+        Sum = (Sum & 0xFFFF) + (Sum >> 16);
+    }
+
+    Hdr->Check = ~Sum;
+}
+
 #define MAX_CONNECTOR_NAT_INDEX 3
 
 #pragma warning(disable : 4244)
@@ -394,6 +438,7 @@ PacketConsumeDataDone(_Inout_ WG_PEER *Peer, _Inout_ NET_BUFFER_LIST *Nbl)
     {
         Len = Ntohs(((IPV4HDR *)Hdr)->TotLen);
         DemagicConnectorIPV4NAT((IPV4HDR *)Hdr);
+        ComputeIPV4Checksum((IPV4HDR *)Hdr);
         if (Len < sizeof(IPV4HDR))
             goto dishonestPacketSize;
         NdisSetNblFlag(Nbl, NDIS_NBL_FLAGS_IS_IPV4);

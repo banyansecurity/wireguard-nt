@@ -122,6 +122,41 @@ DeviceIndicateConnectionStatus(NDIS_HANDLE MiniportAdapterHandle, NDIS_MEDIA_CON
     NdisMIndicateStatusEx(MiniportAdapterHandle, &Indication);
 }
 
+#pragma warning(disable : 4244)
+static VOID
+MagicConnectorIPV4NAT(_Inout_ IPV4HDR* Hdr)
+{
+    /*
+     * MagicConnectorIPV4NAT redoes the NAT magic which we apply to connector
+     * RFC 1918 networks. Reverse of DemagicConnectorIPV4NAT.
+     */
+    UINT32_LE Saddr4 = Ntohl(Hdr->Saddr);
+    UINT8 FirstOctet = (Saddr4 >> 24) & 0xFFFFFFFF;
+    UINT32 FirstOctetBitMask = 0x00FFFFFF;
+
+    // TODO: Need lookup for this AT.
+    if (FirstOctet == 10)
+    {
+        Saddr4 = (Saddr4 & FirstOctetBitMask) | (2 << 24);
+        Hdr->Saddr = Htonl(Saddr4);
+        return;
+    }
+    else if (FirstOctet == 172)
+    {
+        Saddr4 = (Saddr4 & FirstOctetBitMask) | (3 << 24);
+        Hdr->Saddr = Htonl(Saddr4);
+        return;
+    }
+    else if (FirstOctet == 192)
+    {
+        Saddr4 = (Saddr4 & FirstOctetBitMask) | (3 << 24);
+        Hdr->Saddr = Htonl(Saddr4);
+        return;
+    }
+
+    return;
+}
+
 static MINIPORT_SEND_NET_BUFFER_LISTS SendNetBufferLists;
 _Use_decl_annotations_
 static VOID
@@ -180,9 +215,15 @@ SendNetBufferLists(
          * Header4/6 while we're reading it.
          */
         if (Protocol == Htons(NDIS_ETH_TYPE_IPV4))
+        {
             Header4 = Header = NdisGetDataBuffer(Nb, sizeof(IPV4HDR), NULL, 1, 0);
+            MagicConnectorIPV4NAT(Header4);
+            ComputeIPV4Checksum(Header4);
+        }
         else if (Protocol == Htons(NDIS_ETH_TYPE_IPV6))
+        {
             Header6 = Header = NdisGetDataBuffer(Nb, sizeof(IPV6HDR), NULL, 1, 0);
+        }
         else
         {
             LogInfoRatelimited(Wg, "Unsupported NBL protocol");
