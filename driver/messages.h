@@ -92,6 +92,15 @@ typedef struct _IPV6HDR
     IN6_ADDR Daddr;
 } IPV6HDR;
 
+typedef struct _PSDHDR
+{
+    UINT32_BE Daddr;
+    UINT32_BE Saddr;
+    UINT8 Mbz;
+    UINT8 Protocol;
+    UINT16_BE Len;
+} PSDHDR;
+
 typedef struct _MESSAGE_HEADER
 {
     /* The actual layout of this that we want is:

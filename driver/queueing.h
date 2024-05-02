@@ -123,7 +123,11 @@ PeerSerialDequeue(_Inout_ PEER_SERIAL *Serial)
 /* receive.c APIs: */
 _IRQL_requires_max_(DISPATCH_LEVEL)
 VOID
-ComputeIPV4Checksum(_Inout_ IPV4HDR* Hdr);
+ComputeIPV4Checksum(_Inout_ IPV4HDR *Hdr);
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+VOID
+ComputeIncrementalIPV4PayloadChecksum(_In_ IPV4HDR *Hdr, _Inout_ NET_BUFFER *Nb, _In_ UINT16 NewVal, _In_ UINT16 OldVal);
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 VOID
