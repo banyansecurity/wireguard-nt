@@ -312,18 +312,19 @@ ComputeIPV4Checksum(IPV4HDR *Hdr)
 
 _Use_decl_annotations_
 VOID
-ComputeIncrementalIPV4PayloadChecksum(IPV4HDR *Hdr, NET_BUFFER *Nb, UINT16 NewVal, UINT16 OldVal)
+ComputeIncrementalIPV4PayloadChecksum(IPV4HDR* Hdr, NET_BUFFER* Nb, UINT16 NewVal, UINT16 OldVal)
 {
     /**
      * ComputeIncrementalIPV4PayloadChecksum computes an incremental update for
      * the existing payload headers (IP4, TCP / UDP). The checksum update is
      * done in place so the existing checksum does not need to be empty.
-     * 
+     *
      * Start is provided as a debug helper to point to the beginning of the
      * payload in memory.
      */
+    INT32 Carry = 0;
     UINT16 OldChecksum = 0, NewChecksum = 0;
-    UINT16 *Start = NULL, *Payload = NULL;
+    UINT16* Start = NULL, * Payload = NULL;
     UINT8 ChecksumOffset = 0;
 
     switch (Hdr->Protocol)
@@ -344,15 +345,25 @@ ComputeIncrementalIPV4PayloadChecksum(IPV4HDR *Hdr, NET_BUFFER *Nb, UINT16 NewVa
     // Advance 20 bytes (IP4) to start of TCP or UDP header.
     Payload += 10;
 
-    /** 
+    /**
      * FYI: Using RFC 1624 Eqn 4 here. For some reason, the answer seemed to be
      * off by one which is probably something I'm misunderstanding.
-     * 
+     *
      * Checksum will either be offset at 16 bytes (TCP) or 6 bytes (UDP).
      */
     OldChecksum = Payload[ChecksumOffset];
+
+    Carry = OldChecksum - ~OldVal - NewVal;
     NewChecksum = OldChecksum - ~OldVal - NewVal;
-    Payload[ChecksumOffset] = NewChecksum - 1;
+
+    if (Carry <= 0)
+    {
+        Payload[ChecksumOffset] = NewChecksum - 2;
+    }
+    else
+    {
+        Payload[ChecksumOffset] = NewChecksum - 1;
+    }
 }
 
 #define MAX_CONNECTOR_NAT_INDEX 3
