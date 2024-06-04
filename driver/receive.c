@@ -428,12 +428,14 @@ DemagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UIN
     {
         Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
         Peer->ENatIndex = NatIndex;
+        Peer->ONatIndex = NatIndex + 1;
         ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
     }
     else if (CurrentONatIndex == 0 && NatIndex % 2 != 0)
     {
         Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
         Peer->ONatIndex = NatIndex;
+        Peer->ENatIndex = NatIndex - 1;
         ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
     }
 
