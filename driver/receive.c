@@ -312,7 +312,7 @@ ComputeIPV4Checksum(IPV4HDR *Hdr)
 
 _Use_decl_annotations_
 VOID
-ComputeIncrementalIPV4PayloadChecksum(IPV4HDR* Hdr, NET_BUFFER* Nb, UINT16 NewVal, UINT16 OldVal)
+ComputeIncrementalIPV4PayloadChecksum(IPV4HDR *Hdr, NET_BUFFER *Nb, UINT16 NewVal, UINT16 OldVal)
 {
     /**
      * ComputeIncrementalIPV4PayloadChecksum computes an incremental update for
@@ -324,7 +324,7 @@ ComputeIncrementalIPV4PayloadChecksum(IPV4HDR* Hdr, NET_BUFFER* Nb, UINT16 NewVa
      */
     INT32 Carry = 0;
     UINT16 OldChecksum = 0, NewChecksum = 0;
-    UINT16* Start = NULL, * Payload = NULL;
+    UINT16 *Start = NULL, *Payload = NULL;
     UINT8 ChecksumOffset = 0;
 
     switch (Hdr->Protocol)
@@ -366,11 +366,11 @@ ComputeIncrementalIPV4PayloadChecksum(IPV4HDR* Hdr, NET_BUFFER* Nb, UINT16 NewVa
     }
 }
 
-#define MAX_CONNECTOR_NAT_INDEX 3
+#define MAX_CONNECTOR_NAT_INDEX 99
 
 #pragma warning(disable : 4244)
 static VOID
-DemagicConnectorIPV4NAT(_Inout_ IPV4HDR *Hdr, _Inout_ UINT16 *NewVal, _Inout_ UINT16 *OldVal)
+DemagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UINT16 *NewVal, _Inout_ UINT16 *OldVal)
 {
     /*
      * DemagicConnectorIPV4NAT reverses the NAT magic which we apply to
@@ -410,13 +410,31 @@ DemagicConnectorIPV4NAT(_Inout_ IPV4HDR *Hdr, _Inout_ UINT16 *NewVal, _Inout_ UI
     UINT8 NatIndex = (Daddr4 >> 24) & 0xFFFFFFFF;
     UINT8 SecondOctet = (Daddr4 >> 16) & 0xFFFFFFFF;
     UINT32 NatIndexBitMask = 0x00FFFFFF;
-
+    
     *OldVal = (UINT16)(Hdr->Daddr & 0x0000FFFF);
 
     // Case 0
     if (NatIndex > MAX_CONNECTOR_NAT_INDEX)
     {
         return;
+    }
+
+    KIRQL Irql = ExAcquireSpinLockShared(&Peer->EndpointLock);
+    UINT8 CurrentENatIndex = Peer->ENatIndex, CurrentONatIndex = Peer->ONatIndex;
+    ExReleaseSpinLockShared(&Peer->EndpointLock, Irql);
+
+    // Keep track of NAT index so we can do an easy lookup when sending back.
+    if (CurrentENatIndex == 0 && NatIndex % 2 == 0)
+    {
+        Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
+        Peer->ENatIndex = NatIndex;
+        ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
+    }
+    else if (CurrentONatIndex == 0 && NatIndex % 2 != 0)
+    {
+        Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
+        Peer->ONatIndex = NatIndex;
+        ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
     }
 
     // Case 1: Set first octet to 10.
@@ -513,7 +531,7 @@ PacketConsumeDataDone(_Inout_ WG_PEER *Peer, _Inout_ NET_BUFFER_LIST *Nbl)
     {
         IPV4HDR *Header4 = (IPV4HDR *)Hdr;
         Len = Ntohs(Header4->TotLen);
-        DemagicConnectorIPV4NAT(Header4, &NewVal, &OldVal);
+        DemagicConnectorIPV4NAT(Peer, Header4, &NewVal, &OldVal);
 
         if (NewVal != 0)
         {

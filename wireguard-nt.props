@@ -63,9 +63,11 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
+    <_NT_TARGET_VERSION>0xA00000C</_NT_TARGET_VERSION>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Platform)'=='ARM64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
+    <_NT_TARGET_VERSION>0xA00000C</_NT_TARGET_VERSION>
   </PropertyGroup>
   <PropertyGroup Condition="'$(ForcedTargetVersion)'!=''">
     <TargetVersion>$(ForcedTargetVersion)</TargetVersion>

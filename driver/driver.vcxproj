@@ -4,12 +4,16 @@
     <ProjectGuid>{8B282C8F-5870-44C3-9A2A-B9091F4E9F68}</ProjectGuid>
     <RootNamespace>driver</RootNamespace>
     <ProjectName>driver</ProjectName>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <PropertyGroup Label="Configuration">
     <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
     <ConfigurationType>Driver</ConfigurationType>
     <DriverType>WDM</DriverType>
     <ForcedTargetVersion Condition="'$(SDVHacks)'=='true'">Windows10</ForcedTargetVersion>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <_NT_TARGET_VERSION>0xA000010</_NT_TARGET_VERSION>
   </PropertyGroup>
   <Import Project="..\wireguard-nt.props" />
   <PropertyGroup>

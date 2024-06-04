@@ -487,7 +487,7 @@ WaitForInterface(_In_ WCHAR *InstanceId)
         LastError = LOG_ERROR(HRet, L"Failed to create device query");
         goto cleanupEvent;
     }
-    LastError = WaitForSingleObject(Ctx.Event, 15000);
+    LastError = WaitForSingleObject(Ctx.Event, 60000);
     if (LastError != WAIT_OBJECT_0)
     {
         if (LastError == WAIT_FAILED)
