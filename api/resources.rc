@@ -47,15 +47,15 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "CompanyName", "WireGuard LLC"
-      VALUE "FileDescription", "WireGuard API Library"
+      VALUE "CompanyName", "SonicWall Inc."
+      VALUE "FileDescription", "SonicWall CSE Connector for Windows Library"
       VALUE "FileVersion", EXPAND(WIREGUARD_VERSION)
       VALUE "InternalName", "wireguard.dll"
-      VALUE "LegalCopyright", "Copyright \xa9 2018-2021 WireGuard LLC. All Rights Reserved."
+      VALUE "LegalCopyright", "Copyright \xa9 2024 SonicWall Inc. All Rights Reserved."
       VALUE "OriginalFilename", "wireguard.dll"
-      VALUE "ProductName", "WireGuard Driver"
+      VALUE "ProductName", "SonicWall CSE Connector for Windows Driver"
       VALUE "ProductVersion", EXPAND(WIREGUARD_VERSION)
-      VALUE "Comments", "https://www.wireguard.net/"
+      VALUE "Comments", "https://www.banyansecurity.io/"
     END
   END
   BLOCK "VarFileInfo"
