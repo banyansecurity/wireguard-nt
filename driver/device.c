@@ -151,7 +151,8 @@ MagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UINT1
         *NewVal = (UINT16)(Hdr->Saddr & 0x0000FFFF);
         return;
     }
-    else if (FirstOctet == 172)
+    
+    if (FirstOctet == 172)
     {
         Saddr4 = (Saddr4 & FirstOctetBitMask) | (CurrentONatIndex << 24);
         Hdr->Saddr = Htonl(Saddr4);
