@@ -26,6 +26,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>bcrypt.lib;crypt32.lib;iphlpapi.lib;kernel32.lib;ntdll.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <CETCompat Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CETCompat>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
