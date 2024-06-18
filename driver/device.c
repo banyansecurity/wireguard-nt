@@ -143,7 +143,6 @@ MagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UINT1
     UINT8 CurrentENatIndex = Peer->ENatIndex, CurrentONatIndex = Peer->ONatIndex;
     ExReleaseSpinLockShared(&Peer->EndpointLock, Irql);
 
-    // TODO: Need lookup for this AT.
     if (FirstOctet == 10)
     {
         Saddr4 = (Saddr4 & FirstOctetBitMask) | (CurrentENatIndex << 24);
