@@ -42,7 +42,7 @@ EnableDhcp = 0 ; Disable DHCP
 [WireGuard.Properties]
 DeviceIcon,,,,"%12%\wireguard.sys,-7"
 DeviceBrandingIcon,,,,"%12%\wireguard.sys,-7"
-DeviceVendorWebsite,,,,"https://www.wireguard.com/"
+DeviceVendorWebsite,,,,"https://www.banyansecurity.io/"
 
 [WireGuard.Install.Services]
 AddService = WireGuard, 2, WireGuard.Service, WireGuard.EventLog ; 2=SPSVCINST_ASSOCSERVICE
@@ -66,6 +66,6 @@ HKR, , TypesSupported, 0x00010001, 7
 
 [Strings]
 WireGuard.Name = "WireGuard"
-WireGuard.DiskDesc = "WireGuard Driver Install Disk"
-WireGuard.DeviceDesc = "WireGuard Tunnel"
-WireGuard.CompanyName = "WireGuard LLC"
+WireGuard.DiskDesc = "SonicWall CSE Connector for Windows Driver Install Disk"
+WireGuard.DeviceDesc = "SonicWall CSE Connector for Windows"
+WireGuard.CompanyName = "SonicWall Inc."

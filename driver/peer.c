@@ -49,6 +49,8 @@ PeerCreate(
     InitializeListHead(&(*Peer)->AllowedIpsList);
     PubkeyHashtableAdd(Wg->PeerHashtable, *Peer);
     ++Wg->NumPeers;
+    (*Peer)->ENatIndex = 0;
+    (*Peer)->ONatIndex = 0;
     LogInfo(Wg, "Peer %llu created", (*Peer)->InternalId);
     return STATUS_SUCCESS;
 }

@@ -257,6 +257,217 @@ out:
     return Ret;
 }
 
+#pragma warning(disable : 4244)
+_Use_decl_annotations_
+VOID
+ComputeIPV4Checksum(IPV4HDR *Hdr)
+{
+    /**
+     * ComputeIPV4Checksum computes the checksum for a given IPV4HDR. The
+     * modification is done directly within the structure which is pointing to
+     * the underlying MDL packet payload.
+     * 
+     * The checksum must be empty / reset before recalculating the checksum.
+     */
+    Hdr->Check = 0;
+
+    IPV4HDR TempHdr = { 0 };
+
+    TempHdr.Ihl = 5;
+    TempHdr.Version = 4;
+    TempHdr.Tos = Hdr->Tos;
+    TempHdr.TotLen = Hdr->TotLen;
+    TempHdr.Id = Hdr->Id;
+    TempHdr.FragOff = Hdr->FragOff;
+    TempHdr.Ttl = Hdr->Ttl;
+    TempHdr.Protocol = Hdr->Protocol;
+    TempHdr.Saddr = Hdr->Saddr;
+    TempHdr.Daddr = Hdr->Daddr;
+
+    UINT16 *Addr = (UINT16 *) &TempHdr;
+    UINT32 Sum = 0;
+    UINT8 Count = sizeof(IPV4HDR);
+
+    while (Count > 1)
+    {
+        Sum += *Addr++;
+        Count -= 2;
+    }
+
+    if (Count > 0)
+    {
+        Sum += *Addr;
+    }
+
+    while (Sum >> 16)
+    {
+        Sum = (Sum & 0xFFFF) + (Sum >> 16);
+    }
+
+    Hdr->Check = ~Sum;
+}
+
+// Do not care about TCP options (IP4 + TCP / UDP).
+#define MAX_IP4_INET_HEADER_SIZE(_PROTO) _PROTO == IPPROTO_TCP ? 40 : 28
+
+_Use_decl_annotations_
+VOID
+ComputeIncrementalIPV4PayloadChecksum(IPV4HDR *Hdr, NET_BUFFER *Nb, UINT16 NewVal, UINT16 OldVal)
+{
+    /**
+     * ComputeIncrementalIPV4PayloadChecksum computes an incremental update for
+     * the existing payload headers (IP4, TCP / UDP). The checksum update is
+     * done in place so the existing checksum does not need to be empty.
+     *
+     * Start is provided as a debug helper to point to the beginning of the
+     * payload in memory.
+     */
+    INT32 Carry = 0;
+    UINT16 OldChecksum = 0, NewChecksum = 0;
+    UINT16 *Start = NULL, *Payload = NULL;
+    UINT8 ChecksumOffset = 0;
+
+    switch (Hdr->Protocol)
+    {
+    case IPPROTO_TCP:
+        ChecksumOffset = 8;
+        break;
+    case IPPROTO_UDP:
+        ChecksumOffset = 3;
+        break;
+    default:
+        // No need to modify anything.
+        return;
+    }
+
+    Start = Payload = NdisGetDataBuffer(Nb, MAX_IP4_INET_HEADER_SIZE(Hdr->Protocol), NULL, 1, 0);
+
+    // Advance 20 bytes (IP4) to start of TCP or UDP header.
+    Payload += 10;
+
+    /**
+     * FYI: Using RFC 1624 Eqn 4 here. For some reason, the answer seemed to be
+     * off by one which is probably something I'm misunderstanding.
+     *
+     * Checksum will either be offset at 16 bytes (TCP) or 6 bytes (UDP).
+     */
+    OldChecksum = Payload[ChecksumOffset];
+
+    Carry = OldChecksum - ~OldVal - NewVal;
+    NewChecksum = OldChecksum - ~OldVal - NewVal;
+
+    if (Carry <= 0)
+    {
+        Payload[ChecksumOffset] = NewChecksum - 2;
+    }
+    else
+    {
+        Payload[ChecksumOffset] = NewChecksum - 1;
+    }
+}
+
+#define MAX_CONNECTOR_NAT_INDEX 99
+
+#pragma warning(disable : 4244)
+static VOID
+DemagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UINT16 *NewVal, _Inout_ UINT16 *OldVal)
+{
+    /*
+     * DemagicConnectorIPV4NAT reverses the NAT magic which we apply to
+     * connector RFC 1918 networks. The basic flow here is:
+     *
+     * Case 0: Address is already RFC 1918 or public IP, return as-is.
+     *
+     * Case 1: If natIndex % 2 == 0 => First octet is 10.
+     *
+     * Case 2: If natIndex % 2 != 0 => First octet is either 172 or 192. Look
+     *         at the second octet.
+     *
+     *     2a: If second octet is in range [16, 31], then first octet is 172.
+     *     2b: Otherwise, first octet is 192.
+     *
+     * Case 3: The IP does not match any RFC 1918 address, return as-is.
+     *
+     * This function is called in the following WireGuard call hierarchy (some
+     * callees excluded for brevity), as context:
+     *
+     * ...                      (excluded)
+     * PacketDecryptWorker      (parent)
+     * ProcessPerPeerWork
+     * PacketPeerRxWork
+     * PacketConsumeDataDone
+     * DemagicConnectorIPV4NAT  (leaf)
+     *
+     * Upon modification of IPV4HDR in DemagicConnectorIPV4NAT,
+     * PacketPeerRxWork calls NdisMIndicateReceiveNetBufferLists which releases
+     * the underlying, now modified NET_BUFFER structures to higher level
+     * drivers. If NewVal is zero, that would mean no modification was done.
+     * Callers may use this as an indication that checksum computation may be
+     * skipped.
+     */
+
+    UINT32_LE Daddr4 = Ntohl(Hdr->Daddr);
+    UINT8 NatIndex = (Daddr4 >> 24) & 0xFFFFFFFF;
+    UINT8 SecondOctet = (Daddr4 >> 16) & 0xFFFFFFFF;
+    UINT32 NatIndexBitMask = 0x00FFFFFF;
+    
+    *OldVal = (UINT16)(Hdr->Daddr & 0x0000FFFF);
+
+    // Case 0
+    if (NatIndex > MAX_CONNECTOR_NAT_INDEX)
+    {
+        return;
+    }
+
+    KIRQL Irql = ExAcquireSpinLockShared(&Peer->EndpointLock);
+    UINT8 CurrentENatIndex = Peer->ENatIndex, CurrentONatIndex = Peer->ONatIndex;
+    ExReleaseSpinLockShared(&Peer->EndpointLock, Irql);
+
+    // Keep track of NAT index so we can do an easy lookup when sending back.
+    if (CurrentENatIndex == 0 && NatIndex % 2 == 0)
+    {
+        Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
+        Peer->ENatIndex = NatIndex;
+        Peer->ONatIndex = NatIndex + 1;
+        ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
+    }
+    else if (CurrentONatIndex == 0 && NatIndex % 2 != 0)
+    {
+        Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
+        Peer->ONatIndex = NatIndex;
+        Peer->ENatIndex = NatIndex - 1;
+        ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
+    }
+
+    // Case 1: Set first octet to 10.
+    if (NatIndex % 2 == 0)
+    {
+        Daddr4 = (Daddr4 & NatIndexBitMask) | (10 << 24);
+        Hdr->Daddr = Htonl(Daddr4);
+        *NewVal = (UINT16)(Hdr->Daddr & 0x0000FFFF);
+        return;
+    }
+
+    // Case 2: Set first octet to 172 (2a) or 192 (2b).
+    if (SecondOctet > 15 && SecondOctet < 32)
+    {
+        Daddr4 = (Daddr4 & NatIndexBitMask) | (172 << 24);
+        Hdr->Daddr = Htonl(Daddr4);
+        *NewVal = (UINT16)(Hdr->Daddr & 0x0000FFFF);
+        return;
+    }
+    else if (SecondOctet == 168)
+    {
+        Daddr4 = (Daddr4 & NatIndexBitMask) | (192 << 24);
+        Hdr->Daddr = Htonl(Daddr4);
+        *NewVal = (UINT16)(Hdr->Daddr & 0x0000FFFF);
+        return;
+    }
+
+    // Case 3
+    return;
+}
+
 #ifdef DBG
 #    include "selftest/counter.c"
 #endif
@@ -271,6 +482,7 @@ PacketConsumeDataDone(_Inout_ WG_PEER *Peer, _Inout_ NET_BUFFER_LIST *Nbl)
     UINT16_BE Proto;
     VOID *Hdr;
     CHAR EndpointName[SOCKADDR_STR_MAX_LEN], SrcStr[46] = "";
+    UINT16_BE NewVal = 0, OldVal = 0;
 
     SocketSetPeerEndpointFromNbl(Peer, Nbl);
 
@@ -304,6 +516,8 @@ PacketConsumeDataDone(_Inout_ WG_PEER *Peer, _Inout_ NET_BUFFER_LIST *Nbl)
      * been checked "by the hardware" and therefore is unnecessary to check
      * again in software.
      */
+
+
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO *TcpIpChecksumNblInfo =
         (NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO *)&NET_BUFFER_LIST_INFO(Nbl, TcpIpChecksumNetBufferListInfo);
     TcpIpChecksumNblInfo->Receive.TcpChecksumFailed = 0;
@@ -317,7 +531,16 @@ PacketConsumeDataDone(_Inout_ WG_PEER *Peer, _Inout_ NET_BUFFER_LIST *Nbl)
     Proto = IpTunnelParseProtocol(Nbl);
     if (Proto == Htons(NDIS_ETH_TYPE_IPV4) && (Hdr = NdisGetDataBuffer(Nb, sizeof(IPV4HDR), NULL, 1, 0)) != NULL)
     {
-        Len = Ntohs(((IPV4HDR *)Hdr)->TotLen);
+        IPV4HDR *Header4 = (IPV4HDR *)Hdr;
+        Len = Ntohs(Header4->TotLen);
+        DemagicConnectorIPV4NAT(Peer, Header4, &NewVal, &OldVal);
+
+        if (NewVal != 0)
+        {
+            ComputeIPV4Checksum(Header4);
+            ComputeIncrementalIPV4PayloadChecksum(Header4, Nb, NewVal, OldVal);
+        }
+
         if (Len < sizeof(IPV4HDR))
             goto dishonestPacketSize;
         NdisSetNblFlag(Nbl, NDIS_NBL_FLAGS_IS_IPV4);

@@ -122,6 +122,53 @@ DeviceIndicateConnectionStatus(NDIS_HANDLE MiniportAdapterHandle, NDIS_MEDIA_CON
     NdisMIndicateStatusEx(MiniportAdapterHandle, &Indication);
 }
 
+#pragma warning(disable : 4244)
+static VOID
+MagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UINT16 *NewVal, _Inout_ UINT16 *OldVal)
+{
+    /*
+     * MagicConnectorIPV4NAT redoes the NAT magic which we apply to connector
+     * RFC 1918 networks. Reverse of DemagicConnectorIPV4NAT.
+     * 
+     * If NewVal is zero, that would mean no modification was done. Callers may
+     * use this as an indication that checksum computation may be skipped.
+     */
+    UINT32_LE Saddr4 = Ntohl(Hdr->Saddr);
+    UINT8 FirstOctet = (Saddr4 >> 24) & 0xFFFFFFFF;
+    UINT32 FirstOctetBitMask = 0x00FFFFFF;
+
+    *OldVal = (UINT16)(Hdr->Saddr & 0x0000FFFF);
+
+    KIRQL Irql = ExAcquireSpinLockShared(&Peer->EndpointLock);
+    UINT8 CurrentENatIndex = Peer->ENatIndex, CurrentONatIndex = Peer->ONatIndex;
+    ExReleaseSpinLockShared(&Peer->EndpointLock, Irql);
+
+    if (FirstOctet == 10)
+    {
+        Saddr4 = (Saddr4 & FirstOctetBitMask) | (CurrentENatIndex << 24);
+        Hdr->Saddr = Htonl(Saddr4);
+        *NewVal = (UINT16)(Hdr->Saddr & 0x0000FFFF);
+        return;
+    }
+    
+    if (FirstOctet == 172)
+    {
+        Saddr4 = (Saddr4 & FirstOctetBitMask) | (CurrentONatIndex << 24);
+        Hdr->Saddr = Htonl(Saddr4);
+        *NewVal = (UINT16)(Hdr->Saddr & 0x0000FFFF);
+        return;
+    }
+    else if (FirstOctet == 192)
+    {
+        Saddr4 = (Saddr4 & FirstOctetBitMask) | (CurrentONatIndex << 24);
+        Hdr->Saddr = Htonl(Saddr4);
+        *NewVal = (UINT16)(Hdr->Saddr & 0x0000FFFF);
+        return;
+    }
+
+    return;
+}
+
 static MINIPORT_SEND_NET_BUFFER_LISTS SendNetBufferLists;
 _Use_decl_annotations_
 static VOID
@@ -175,14 +222,19 @@ SendNetBufferLists(
         IPV4HDR *Header4 = NULL;
         IPV6HDR *Header6 = NULL;
         VOID *Header = NULL;
+        UINT16 NewVal = 0, OldVal = 0;
         /* Potential TOCTOU? Generally NDIS considers headers fair game for R/W, but raw sockets
          * and hyper-v devices make me fear that a physically local user might be able to modify
          * Header4/6 while we're reading it.
          */
         if (Protocol == Htons(NDIS_ETH_TYPE_IPV4))
+        {
             Header4 = Header = NdisGetDataBuffer(Nb, sizeof(IPV4HDR), NULL, 1, 0);
+        }
         else if (Protocol == Htons(NDIS_ETH_TYPE_IPV6))
+        {
             Header6 = Header = NdisGetDataBuffer(Nb, sizeof(IPV6HDR), NULL, 1, 0);
+        }
         else
         {
             LogInfoRatelimited(Wg, "Unsupported NBL protocol");
@@ -207,6 +259,20 @@ SendNetBufferLists(
             ++Wg->Statistics.ifOutErrors;
             goto returnNbl;
         }
+
+        if (Header4 && Protocol == Htons(NDIS_ETH_TYPE_IPV4))
+        {
+            MagicConnectorIPV4NAT(Peer, Header4, &NewVal, &OldVal);
+
+            if (NewVal != 0)
+            {
+                ComputeIPV4Checksum(Header4);
+                ComputeIncrementalIPV4PayloadChecksum(Header4, Nb, NewVal, OldVal);
+            }
+        }
+
+        // TODO: Add IPV6 Support for Connector here.
+
         ADDRESS_FAMILY Family = ReadUShortNoFence(&Peer->Endpoint.Addr.si_family);
         if (Family != AF_INET && Family != AF_INET6)
         {

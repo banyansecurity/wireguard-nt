@@ -23,6 +23,7 @@
       <DelayLoadDLLs>setupapi.dll;shell32.dll</DelayLoadDLLs>
       <AdditionalDependencies>Setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
+      <CETCompat Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CETCompat>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
