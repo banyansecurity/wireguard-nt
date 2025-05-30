@@ -366,7 +366,7 @@ ComputeIncrementalIPV4PayloadChecksum(IPV4HDR *Hdr, NET_BUFFER *Nb, UINT16 NewVa
     }
 }
 
-#define MAX_CONNECTOR_NAT_INDEX 99
+#define MAX_CONNECTOR_NAT_INDEX 255
 
 #pragma warning(disable : 4244)
 static VOID
@@ -404,6 +404,10 @@ DemagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UIN
      * drivers. If NewVal is zero, that would mean no modification was done.
      * Callers may use this as an indication that checksum computation may be
      * skipped.
+     *
+     * The responsibility of skipping invalid or ambiguous NAT indices is under
+     * the purview of Netagent. Netagent determines the NAT indexing and does
+     * the initial NAT on the Netagent side.
      */
 
     UINT32_LE Daddr4 = Ntohl(Hdr->Daddr);
