@@ -72,6 +72,19 @@ typedef struct _WG_PEER
     LIST_ENTRY PeerList;
     LIST_ENTRY AllowedIpsList;
     UINT64 InternalId;
+
+    /*
+     * PeerFirstOctet represents the first octet for the connector side IP
+     * address. This allows us to keep track of the NAT index to exclude from
+     * out NAT mapping logic.
+     */
+    UINT8 PeerFirstOctet;
+
+    /*
+     * ENatIndex and ONatIndex represent the NAT index when we're doing NAT on
+     * inbound traffic from access tier to connector. These indices are always
+     * contiguous.
+     */
     UINT8 ENatIndex, ONatIndex;
 } WG_PEER;
 
