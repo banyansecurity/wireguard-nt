@@ -148,7 +148,7 @@ MagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UINT1
      * tier on start. This will help us figure out the first octet that we
      * ought not NAT on the receive side.
      */
-    if (Hdr->Protocol == IPPROTO_ICMP)
+    if (CurrentPeerFirstOctet == 0 && Hdr->Protocol == IPPROTO_ICMP)
     {
         __iso_volatile_store8(&Peer->PeerFirstOctet, FirstOctet);
     }
