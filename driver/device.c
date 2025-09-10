@@ -139,9 +139,19 @@ MagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UINT1
 
     *OldVal = (UINT16)(Hdr->Saddr & 0x0000FFFF);
 
-    KIRQL Irql = ExAcquireSpinLockShared(&Peer->EndpointLock);
-    UINT8 CurrentENatIndex = Peer->ENatIndex, CurrentONatIndex = Peer->ONatIndex;
-    ExReleaseSpinLockShared(&Peer->EndpointLock, Irql);
+    UINT8 CurrentPeerFirstOctet = __iso_volatile_load8(&Peer->PeerFirstOctet);
+    UINT8 CurrentENatIndex = __iso_volatile_load8(&Peer->ENatIndex);
+    UINT8 CurrentONatIndex = __iso_volatile_load8(&Peer->ONatIndex);
+
+    /*
+     * Capture the first outbound ping that happens from connector to access
+     * tier on start. This will help us figure out the first octet that we
+     * ought not NAT on the receive side.
+     */
+    if (CurrentPeerFirstOctet == 0 && Hdr->Protocol == IPPROTO_ICMP)
+    {
+        __iso_volatile_store8(&Peer->PeerFirstOctet, FirstOctet);
+    }
 
     if (FirstOctet == 10)
     {

@@ -377,6 +377,8 @@ DemagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UIN
      * connector RFC 1918 networks. The basic flow here is:
      *
      * Case 0: Address is already RFC 1918 or public IP, return as-is.
+     *         Also, if the first octet is equal to our connector peer IP, then
+     *         we ought skip NAT.
      *
      * Case 1: If natIndex % 2 == 0 => First octet is 10.
      *
@@ -414,33 +416,29 @@ DemagicConnectorIPV4NAT(_Inout_ WG_PEER *Peer, _Inout_ IPV4HDR *Hdr, _Inout_ UIN
     UINT8 NatIndex = (Daddr4 >> 24) & 0xFFFFFFFF;
     UINT8 SecondOctet = (Daddr4 >> 16) & 0xFFFFFFFF;
     UINT32 NatIndexBitMask = 0x00FFFFFF;
+    UINT8 CurrentPeerFirstOctet = __iso_volatile_load8(&Peer->PeerFirstOctet);
     
     *OldVal = (UINT16)(Hdr->Daddr & 0x0000FFFF);
 
     // Case 0
-    if (NatIndex > MAX_CONNECTOR_NAT_INDEX)
+    if (NatIndex > MAX_CONNECTOR_NAT_INDEX || NatIndex == CurrentPeerFirstOctet)
     {
         return;
     }
 
-    KIRQL Irql = ExAcquireSpinLockShared(&Peer->EndpointLock);
-    UINT8 CurrentENatIndex = Peer->ENatIndex, CurrentONatIndex = Peer->ONatIndex;
-    ExReleaseSpinLockShared(&Peer->EndpointLock, Irql);
+    UINT8 CurrentENatIndex = __iso_volatile_load8(&Peer->ENatIndex);
+    UINT8 CurrentONatIndex = __iso_volatile_load8(&Peer->ONatIndex);
 
     // Keep track of NAT index so we can do an easy lookup when sending back.
     if (CurrentENatIndex == 0 && NatIndex % 2 == 0)
     {
-        Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
-        Peer->ENatIndex = NatIndex;
-        Peer->ONatIndex = NatIndex + 1;
-        ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
+        __iso_volatile_store8(&Peer->ENatIndex, NatIndex);
+        __iso_volatile_store8(&Peer->ONatIndex, NatIndex + 1);
     }
     else if (CurrentONatIndex == 0 && NatIndex % 2 != 0)
     {
-        Irql = ExAcquireSpinLockExclusive(&Peer->EndpointLock);
-        Peer->ONatIndex = NatIndex;
-        Peer->ENatIndex = NatIndex - 1;
-        ExReleaseSpinLockExclusive(&Peer->EndpointLock, Irql);
+        __iso_volatile_store8(&Peer->ONatIndex, NatIndex);
+        __iso_volatile_store8(&Peer->ENatIndex, NatIndex - 1);
     }
 
     // Case 1: Set first octet to 10.
